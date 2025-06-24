@@ -1,0 +1,19 @@
+function R = matrizRTriangle3AgentWithLeader(q, m)
+    % Updated rigidity matrix for 9 agents with leader.
+
+    % Compute rows of the R matrix using the updated expressions
+    R1 = [(q(1*m-2:1*m, 1) - q(2*m-2:2*m, 1))', ...
+          -(q(1*m-2:1*m, 1) - q(2*m-2:2*m, 1))', ...
+          zeros(m, 1)'];
+
+    R2 = [zeros(m, 1)', ...
+           (q(2*m-2:2*m, 1) - q(3*m-2:3*m, 1))', ...
+          -(q(2*m-2:2*m, 1) - q(3*m-2:3*m, 1))'];
+
+    R3 = [(q(1*m-2:1*m, 1) - q(3*m-2:3*m, 1))', ...
+          zeros(m, 1)', ...
+          -(q(1*m-2:1*m, 1) - q(3*m-2:3*m, 1))'];
+
+       % Combine all rows into the matrix R
+      R = [R1; R2; R3];
+end
