@@ -993,6 +993,8 @@ end
 
 temp = 0; % Flag to track if any error exceeds its bounds
 
+once_time = 0; % Flag to ensure plots are only created once
+
 for i = 1:Framework.NUM_EDGES
     % Select figure and legend label based on edge index
     if ismember(i, [1])
@@ -1002,20 +1004,23 @@ for i = 1:Framework.NUM_EDGES
         figure(33);
         % Plot upper performance bound (e_plus)
         plot(SimulationParams.TIME(1:end - 1), ErrorSignals.e_plus(i, :), ...
-            'Color', 'r', 'LineWidth', 2, 'LineStyle', '--', 'DisplayName', 'Upper Bound');
+            'Color', 'r', 'LineWidth', 2, 'LineStyle', '--', 'DisplayName', 'Cota de Rendimiento Superior-Inferior');
         hold on;
         % Plot lower performance bound (-e_minus)
         plot(SimulationParams.TIME(1:end - 1), -ErrorSignals.e_minus(i, :), ...
             'Color', 'r', 'LineWidth', 2, 'LineStyle', '--', 'HandleVisibility', 'off');
         hold on;
         % Plot actual edge error (e)
+        % Get agent indices for this edge
+        agent_i = EdgesFormation.E_ARRAY(i,2);
+        agent_j = EdgesFormation.E_ARRAY(i,1);
         plot(SimulationParams.TIME(1:end - 1), ErrorSignals.e(i, :), ...
-            'LineWidth', 2, 'DisplayName', 'Edge Error');
+            'LineWidth', 2, 'DisplayName', ['Error entre vehículos (', num2str(agent_i), '-', num2str(agent_j), ')']);
         hold on;
         grid on;
         xlabel('Tiempo [Seg]', 'FontSize', 18);
         ylabel('Error $e_{ij}$', 'Interpreter', 'latex', 'FontSize', 18);
-        title('Prescribed Performance Bounds and Edge Error (Edge 1)', 'FontSize', 16);
+        % title('Prescribed Performance Bounds and Edge Error (Edge 1)', 'FontSize', 16);
         legend('show');
         % Check if error exceeds bounds
         if any(ErrorSignals.e(i, :) > ErrorSignals.e_plus(i, :) | ...
@@ -1029,22 +1034,29 @@ for i = 1:Framework.NUM_EDGES
         % Plot for Edges 2 and 3 (Figure 34)
         %-------------------------------
         figure(34);
-        % Plot upper performance bound (e_plus)
-        plot(SimulationParams.TIME(1:end - 1), ErrorSignals.e_plus(i, :), ...
-            'Color', 'r', 'LineWidth', 2, 'LineStyle', '--', 'DisplayName', 'Upper Bound');
-        hold on;
-        % Plot lower performance bound (-e_minus)
-        plot(SimulationParams.TIME(1:end - 1), -ErrorSignals.e_minus(i, :), ...
-            'Color', 'r', 'LineWidth', 2, 'LineStyle', '--', 'HandleVisibility', 'off');
-        hold on;
+        if once_time == 0
+            % Create a new figure for edges 2 and 3
+            % Plot upper performance bound (e_plus)
+            plot(SimulationParams.TIME(1:end - 1), ErrorSignals.e_plus(i, :), ...
+                'Color', 'r', 'LineWidth', 2, 'LineStyle', '--', 'DisplayName', 'Cota de Rendimiento Superior-Inferior');
+            hold on;
+            % Plot lower performance bound (-e_minus)
+            plot(SimulationParams.TIME(1:end - 1), -ErrorSignals.e_minus(i, :), ...
+                'Color', 'r', 'LineWidth', 2, 'LineStyle', '--', 'HandleVisibility', 'off');
+            hold on;
+            once_time = 1; % Set flag to indicate figure has been created
+        end
         % Plot actual edge error (e)
+        % Get agent indices for this edge
+        agent_i = EdgesFormation.E_ARRAY(i,2);
+        agent_j = EdgesFormation.E_ARRAY(i,1);
         plot(SimulationParams.TIME(1:end - 1), ErrorSignals.e(i, :), ...
-            'LineWidth', 2, 'DisplayName', ['Edge Error (Edge ', num2str(i), ')']);
+            'LineWidth', 2, 'DisplayName', ['Error entre vehículos (', num2str(agent_i), '-', num2str(agent_j), ')']);
         hold on;
         grid on;
         xlabel('Tiempo [Seg]', 'FontSize', 18);
         ylabel('Error $e_{ij}$', 'Interpreter', 'latex', 'FontSize', 18);
-        title('Prescribed Performance Bounds and Edge Errors (Edges 2 & 3)', 'FontSize', 16);
+        % title('Prescribed Performance Bounds and Edge Errors (Edges 2 & 3)', 'FontSize', 16);
         % Only show legend once
         if i == 2
             legend('show');
@@ -1163,8 +1175,9 @@ for i = 1:Framework.NUM_AGENTS
     subplot(3,1,1);
     plot(SimulationParams.TIME(1:end-1), u(i*Framework.SPACE_DIM-2, :), 'LineWidth', 2);
     hold on;
-    title('Control Input $u_x$ for Each Agent', 'Interpreter', 'latex', 'FontSize', 14);
-    xlabel('Time [s]', 'FontSize', 12);
+    ylim([-1000, 1000]); % Set y-axis limits for better visibility
+    title('Entrada de Control $u_x$ para Cada Agente', 'Interpreter', 'latex', 'FontSize', 14);
+    xlabel('Tiempo [s]', 'FontSize', 12);
     ylabel('$u_x$', 'Interpreter', 'latex', 'FontSize', 12);
     grid on;
 
@@ -1174,8 +1187,9 @@ for i = 1:Framework.NUM_AGENTS
     subplot(3,1,2);
     plot(SimulationParams.TIME(1:end-1), u(i*Framework.SPACE_DIM-1, :), 'LineWidth', 2);
     hold on;
-    title('Control Input $u_y$ for Each Agent', 'Interpreter', 'latex', 'FontSize', 14);
-    xlabel('Time [s]', 'FontSize', 12);
+    ylim([-1000, 2000]); % Set y-axis limits for better visibility
+    title('Entrada de Control $u_y$ para Cada Agente', 'Interpreter', 'latex', 'FontSize', 14);
+    xlabel('Tiempo [s]', 'FontSize', 12);
     ylabel('$u_y$', 'Interpreter', 'latex', 'FontSize', 12);
     grid on;
 
@@ -1185,8 +1199,9 @@ for i = 1:Framework.NUM_AGENTS
     subplot(3,1,3);
     plot(SimulationParams.TIME(1:end-1), u(i*Framework.SPACE_DIM, :), 'LineWidth', 2);
     hold on;
-    title('Control Input $u_z$ for Each Agent', 'Interpreter', 'latex', 'FontSize', 14);
-    xlabel('Time [s]', 'FontSize', 12);
+    ylim([-1000, 1000]); % Set y-axis limits for better visibility
+    title('Entrada de Control $u_z$ para Cada Agente', 'Interpreter', 'latex', 'FontSize', 14);
+    xlabel('Tiempo [s]', 'FontSize', 12);
     ylabel('$u_z$', 'Interpreter', 'latex', 'FontSize', 12);
     grid on;
 end
@@ -1199,7 +1214,7 @@ legend(arrayfun(@(x) sprintf('Agent %d', x), 1:Framework.NUM_AGENTS, 'UniformOut
 subplot(3,1,3);
 legend(arrayfun(@(x) sprintf('Agent %d', x), 1:Framework.NUM_AGENTS, 'UniformOutput', false), 'Location', 'best');
 
-sgtitle('Control Inputs ($u_x$, $u_y$, $u_z$) for All Agents', 'Interpreter', 'latex', 'FontSize', 16);
+% sgtitle('Control Inputs ($u_x$, $u_y$, $u_z$) for All Agents', 'Interpreter', 'latex', 'FontSize', 16);
 
 plotPositionErrors(3, AgentSetup.positionsArray_M, TrajectoryDefVelocity.PosLeaderDesired, Framework.SPACE_DIM, SimulationParams.TIME);
 
@@ -1238,5 +1253,11 @@ disp("Total Control Energy: " + ControlEnergy)
 
 % Adjust layout for better visualization
 sgtitle('Velocity Errors (position Error [M]) for 9 Agents', 'FontSize', 14);
+
+% reduce in the x and y axis
+% AgentPositions(7, 1:end) = AgentPositions(7, 1:end) - 8 ; 
+% AgentPositions(8, 1:end) = AgentPositions(8, 1:end) - 8 ; 
+% plotPositionComparison(3, AgentSetup.positionsArray_M, TrajectoryDefVelocity.PosLeaderDesired, Framework.SPACE_DIM, SimulationParams.TIME);
+
 
 toc
