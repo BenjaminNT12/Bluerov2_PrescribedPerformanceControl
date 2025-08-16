@@ -22,7 +22,7 @@ tic
 
 disp("iniciando simulacion")
 
-ANIMATION = 0;
+ANIMATION = 1;
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Simulation and Control Parameters Initialization
@@ -46,21 +46,23 @@ Framework.NUM_EDGES          = 3;    % Number of edges in the formation graph
 Framework.STATES_PER_VEHICLE = 12;   % Number of states per vehicle [η₁; η₂; ν₁; ν₂]
 Framework.LEADER_AGENT       = 3;    % Index of the leader agent
 Framework.distance           = zeros(Framework.NUM_EDGES, 1); % Desired inter-agent distances (to be computed later)
-
+SimulationParams.noise       = 0.00; % Noise level for sensor measurements (if applicable)
 %-------------------------------------------------
 % 3. Prescribed Performance Control (PPC) Parameters
 %-------------------------------------------------
 PPControl = struct();
-PPControl.K_V       = 1.5;   % Gain for virtual control (velocity tracking)
-PPControl.K_TANG    = 9900;     % Gain for hyperbolic tangent term (robustness)
-PPControl.K_SIGMA   = 9750;      % Gain for sigma term (damping)
-PPControl.TAU_SIGMA = 10.5;      % Time constant for sigma term
+% PPControl.K_V       = 3;   % Gain for virtual control (velocity tracking)
+% PPControl.K_TANG    = 11900;     % Gain for hyperbolic tangent term (robustness)
+% PPControl.K_SIGMA   = 11;      % Gain for sigma term (damping)
+PPControl.K_V       = 3;   % Gain for virtual control (velocity tracking)
+PPControl.K_TANG    = 11900;     % Gain for hyperbolic tangent term (robustness)
+PPControl.K_SIGMA   = 11750;      % Gain for sigma term (damping)
 
 %-------------------------------------------------
 % 4. PID Controller Gains (for orientation control)
 %-------------------------------------------------
 PidControl = struct();
-PidControl.KP   = 2*100;   % Proportional gain
+PidControl.KP   = 3*100;   % Proportional gain
 PidControl.KD   = 60;    % Derivative gain
 PidControl.KI   = 40;    % Integral gain
 
@@ -74,6 +76,17 @@ PPF.PPF_START         = 1;      % Initial value of the performance function
 PPF.PPF_END           = 0.07;   % Final value of the performance function
 PPF.BETA              = 0.9;    % Exponential decay rate for the performance function
 
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% Parámetros de la trayectoria
+R     = 5;           % Radio en metros
+omega = 0.15;        % Velocidad angular (rad/s)
+xc    = 2.7;         % Centro en X
+yc    = 12.1;        % Centro en Y
+zc    = 0;           % Altura inicial
+phi0  = 0.0;         % Fase inicial
+
+vz    = 1;          % Velocidad vertical constante en m/s
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Prescribed Performance Function (PPF) Calculation and Agent Initialization
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -90,6 +103,10 @@ PPF.BETA              = 0.9;    % Exponential decay rate for the performance fun
 PPF.PPF = (PPF.PPF_START - PPF.PPF_END) ...
     .* exp(-PPF.BETA * SimulationParams.TIME) ...
     + PPF.PPF_END;
+
+% Derivative of the PPF with respect to time
+PPF.PPF_DOT = -PPF.BETA * (PPF.PPF - PPF.PPF_END);
+
 
 % Pre-allocate arrays for the upper and lower bounds of the PPF for each edge.
 PPF.b_plus  = zeros(Framework.NUM_EDGES, 1);
@@ -215,7 +232,7 @@ PPC_Signals.velocityError_MPS      = zeros(Framework.SPACE_DIM * Framework.NUM_A
 PPC_Signals.controlInput_V         = zeros(Framework.SPACE_DIM * Framework.NUM_AGENTS, length(SimulationParams.TIME) - 1);   % Actual control input (e.g., in Volts)
 PPC_Signals.velocityErrorSigma_MPS = zeros(Framework.SPACE_DIM * Framework.NUM_AGENTS, length(SimulationParams.TIME) - 1);  % Velocity error (in meters/second)
 PPC_Signals.qTildeDistanceError_M  = zeros(Framework.SPACE_DIM * Framework.NUM_AGENTS, length(SimulationParams.TIME) - 1); % Transformed distance error (in meters)
-PPC_Signals.desiredVelocity_MPS    = zeros(Framework.SPACE_DIM * Framework.NUM_AGENTS, length(SimulationParams.TIME) - 1);  % Desired velocity (in meters/second)
+PPC_Signals.desiredvelocityArray_MPS    = zeros(Framework.SPACE_DIM * Framework.NUM_AGENTS, length(SimulationParams.TIME) - 1);  % Desired velocity (in meters/second)
 
 % Rotation matrices of agents from the previous time step/iteration
 % Initialize a 3D array to store the previous rotation matrices for each agent (size: NUM_AGENTS x 3 x 3)
@@ -237,7 +254,7 @@ end
 PPC_Signals.qTinDistanceError_M = qtinVector(EdgesFormation.E_ARRAY, PPC_Signals.qTildeDistanceError_M(:, 1), Framework.LEADER_AGENT, Framework.NUM_EDGES, Framework.SPACE_DIM);
 
 % Initialize initial linear and angular velocities for each agent
-initialLinearVelocity_MPS = [
+initialLinearvelocityArray_MPS = [
     2.2786; 0.7190; 2.8849;
     0.7418; 1.0539; 1.0164;
     0.5796; 0.7611; 2.2201;
@@ -250,9 +267,9 @@ initialAngularVelocity_RADPS = [
 ];
 
 % Store initial velocities in AgentSetup structure for clarity and reuse
-AgentSetup.initialLinearVelocity_MPS    = initialLinearVelocity_MPS;
-AgentSetup.initialAngularVelocity_RADPS = initialAngularVelocity_RADPS;
-AgentSetup.velocity_MPS                 = AgentSetup.initialLinearVelocity_MPS + AgentSetup.initialAngularVelocity_RADPS;
+AgentSetup.initialLinearvelocityArray_MPS = initialLinearvelocityArray_MPS;
+AgentSetup.initialAngularVelocity_RADPS   = initialAngularVelocity_RADPS;
+AgentSetup.velocityArray_MPS              = AgentSetup.initialLinearvelocityArray_MPS;
     
 % Desired trajectory functions
 TrajectoryDefVelocity = struct();
@@ -262,30 +279,31 @@ TrajectoryDefVelocity = struct();
 % in a multi-agent underwater vehicle simulation. The trajectory is parameterized
 % as a function of time (t) and includes the position, velocity (first derivative),
 % and acceleration (second derivative) for each spatial axis (X, Y, Z).
-%
-% Equations:
-%   - X trajectory:      x(t)   = 2*sin(0.15*t)
-%   - Y trajectory:      y(t)   = 2*cos(0.15*t)
-%   - Z trajectory:      z(t)   = 0
-%   - X velocity:        dx/dt  = 2*0.15*cos(0.15*t)
-%   - Y velocity:        dy/dt  = -2*0.15*sin(0.15*t)
-%   - Z velocity:        dz/dt  = 0
-%   - X acceleration:    d²x/dt² = -2*0.15^2*sin(0.15*t)
-%   - Y acceleration:    d²y/dt² = -2*0.15^2*cos(0.15*t)
-%   - Z acceleration:    d²z/dt² = 0
-%
-% The Z trajectory is constant (zero), indicating planar motion in the XY plane.
-% The functions are defined as anonymous functions for use in trajectory tracking
-% and control algorithms.
-% Define the desired linear trajectory functions for the leader agent
-TrajectoryDefVelocity.x_linear_desired    = @(t) 2*sin(0.15*t);           % X trajectory
-TrajectoryDefVelocity.y_linear_desired    = @(t) 2*cos(0.15*t);           % Y trajectory
-TrajectoryDefVelocity.z_linear_desired    = @(t) 1*ones(1,length(t));     % Z trajectory (linear)
 
-% First derivatives (velocities)
-TrajectoryDefVelocity.xp_linear_desired   = @(t) 2*0.15*cos(0.15*t);      % dx/dt
-TrajectoryDefVelocity.yp_linear_desired   = @(t) -2*0.15*sin(0.15*t);     % dy/dt
-TrajectoryDefVelocity.zp_linear_desired   = @(t) zeros(1,length(t));      % dz/dt
+
+%% Funciones de posición deseada
+pos_x_desired = @(t) xc + R*cos(omega*t + phi0);
+pos_y_desired = @(t) yc + R*sin(omega*t + phi0);
+pos_z_desired = @(t) zc + vz*t;
+
+%% Funciones de velocidad deseada (derivadas consistentes)
+vel_x_desired = @(t) -R*omega*sin(omega*t);
+vel_y_desired = @(t)  R*omega*cos(omega*t);
+vel_z_desired = @(t)  vz*ones(size(t)); % Velocidad constante en Z
+
+%% Asignación a la estructura de trayectoria
+TrajectoryDefVelocity.pos_linear_desired = @(t) [ pos_x_desired(t);
+                                                  pos_y_desired(t);
+                                                  pos_z_desired(t) ];
+
+TrajectoryDefVelocity.nu1_desired = @(t) [ vel_x_desired(t);
+                                           vel_y_desired(t);
+                                           vel_z_desired(t) ];
+
+%% Cálculo de las referencias para todo el horizonte
+TrajectoryDefVelocity.PosLeaderDesired       = TrajectoryDefVelocity.pos_linear_desired(SimulationParams.TIME);
+TrajectoryDefVelocity.VelLinearLeaderDesired = TrajectoryDefVelocity.nu1_desired(SimulationParams.TIME);
+
 
 
 % Define the desired angular trajectory functions for the leader agent
@@ -295,14 +313,14 @@ TrajectoryDefVelocity.zp_linear_desired   = @(t) zeros(1,length(t));      % dz/d
 % its first derivative (angular velocity), and its second derivative (angular acceleration).
 % These trajectories are used as references for the prescribed performance control.
 
-TrajectoryDefVelocity.phi_desired    = @(t) zeros(1, length(t));               % Roll angle
-TrajectoryDefVelocity.theta_desired  = @(t) zeros(1, length(t));               % Pitch angle
-TrajectoryDefVelocity.psi_desired    = @(t) zeros(1, length(t));               % Yaw angle (constant)
+phi_desired    = @(t) zeros(1, length(t));               % Roll angle
+theta_desired  = @(t) zeros(1, length(t));               % Pitch angle
+psi_desired    = @(t) zeros(1, length(t));               % Yaw angle (constant)
 
 % First derivatives (angular velocities) BODY
-TrajectoryDefVelocity.phi_dot_desired   = @(t) zeros(1, length(t));            % d(phi)/dt
-TrajectoryDefVelocity.theta_dot_desired = @(t) zeros(1, length(t));            % d(theta)/dt
-TrajectoryDefVelocity.psi_dot_desired   = @(t) zeros(1, length(t));            % d(psi)/dt
+phi_dot_desired   = @(t) zeros(1, length(t));            % d(phi)/dt
+theta_dot_desired = @(t) zeros(1, length(t));            % d(theta)/dt
+psi_dot_desired   = @(t) zeros(1, length(t));            % d(psi)/dt
 
 
 %% Description
@@ -310,50 +328,33 @@ TrajectoryDefVelocity.psi_dot_desired   = @(t) zeros(1, length(t));            %
 % which likely represents the position and orientation states of the underwater vehicle
 % in the multi-agent prescribed performance control simulation model.
 %definition for each axis of eta1
-TrajectoryDefVelocity.eta1_desired = @(t) [TrajectoryDefVelocity.x_linear_desired(t); 
-                                          TrajectoryDefVelocity.y_linear_desired(t); 
-                                          TrajectoryDefVelocity.z_linear_desired(t)]; % Desired trajectory
-
-%definition for each axis of nu1
-TrajectoryDefVelocity.nu1_desired  = @(t) [TrajectoryDefVelocity.xp_linear_desired(t); 
-                                          TrajectoryDefVelocity.yp_linear_desired(t); 
-                                          TrajectoryDefVelocity.zp_linear_desired(t)];
+TrajectoryDefVelocity.nu1_desired = @(t) [ x_velLinear_desired(t); 
+                                           y_velLinear_desired(t); 
+                                           z_velLinear_desired(t)]; % Desired trajectory
 
 % This section defines the parameters or variables associated with each axis of the eta2 vector,
 % which typically represents a subset of the state variables (such as orientation or position)
 % in the underwater vehicle model. The definitions provided here are essential for the
 % implementation of prescribed performance control in a multi-agent underwater system.
 % definition for each axis of eta2
-TrajectoryDefVelocity.eta2_desired = @(t) [TrajectoryDefVelocity.phi_desired(t); 
-                                          TrajectoryDefVelocity.theta_desired(t); 
-                                          TrajectoryDefVelocity.psi_desired(t)]; % Desired trajectory
+TrajectoryDefVelocity.eta2_desired = @(t) [phi_desired(t); 
+                                           theta_desired(t); 
+                                           psi_desired(t)]; % Desired trajectory
 
 % definition for each axis of nu2
-TrajectoryDefVelocity.nu2_desired  = @(t) [TrajectoryDefVelocity.phi_dot_desired(t); 
-                                          TrajectoryDefVelocity.theta_dot_desired(t); 
-                                          TrajectoryDefVelocity.psi_dot_desired(t)];
+TrajectoryDefVelocity.nu2_desired  = @(t) [phi_dot_desired(t); 
+                                           theta_dot_desired(t); 
+                                           psi_dot_desired(t)];
 
+TrajectoryDefVelocity.pos_linear_desired = @(t) [ ...
+                                                pos_x_desired(t); ...
+                                                pos_y_desired(t); ...
+                                                pos_z_desired(t) ];
 
-                                          
-% Assigns the desired linear and angular velocity trajectories for the leader agent.
-% The desired velocities are extracted from the precomputed trajectory definitions
-% at the specified simulation time array.
-%
-% - TrajectoryDefVelocity.VelLinearLeaderDesired: Desired linear velocity trajectory for the leader.
-% - TrajectoryDefVelocity.VelAngularLeaderDesired: Desired angular velocity trajectory for the leader.
-% - SimulationParams.TIME: Array of time steps for the simulation.
-TrajectoryDefVelocity.VelLinearLeaderDesired  = TrajectoryDefVelocity.eta1_desired(SimulationParams.TIME); % Desired trajectory
 
 TrajectoryDefVelocity.VelAngularLeaderDesired = [0*ones(1,length(SimulationParams.TIME));   % Z y Y descendente
                                                  0*ones(1,length(SimulationParams.TIME));   % Z y X ascendente
                                                  0*ones(1,length(SimulationParams.TIME))];  % X y Y 
-
-% Integral of the desired trajectory TrajectoryDefVelocity.VelLinearLeaderDesired
-TrajectoryDefVelocity.PosLeaderDesired = [
-    TrajectoryDefVelocity.x_linear_desired(SimulationParams.TIME);
-    TrajectoryDefVelocity.y_linear_desired(SimulationParams.TIME);
-    TrajectoryDefVelocity.z_linear_desired(SimulationParams.TIME)
-];
 
 % Initialize the struct array to store PID gains
 PID_gains = struct('Kp', [], 'Ki', [], 'Kd', []);
@@ -400,7 +401,7 @@ end
 for i = 1:Framework.NUM_AGENTS
     base_idx = (i - 1) * Framework.SPACE_DIM;
     vehicle(i).eta1(:, 1) = AgentSetup.positionsArray_M(base_idx + 1:base_idx + Framework.SPACE_DIM, 1);
-    vehicle(i).nu1(:, 1)  = AgentSetup.velocity_MPS(base_idx + 1:base_idx + Framework.SPACE_DIM, 1);
+    vehicle(i).nu1(:, 1)  = AgentSetup.velocityArray_MPS(base_idx + 1:base_idx + Framework.SPACE_DIM, 1);
 end
 
 % Initialize state vector X
@@ -423,7 +424,6 @@ end
 % Main Loop
 totalIterations = length(SimulationParams.TIME) - 1;
 hWait = waitbar(0, 'Processing...');  % Inicialización de la barra de progreso
-
 
 
 for time_iterator = 1:totalIterations
@@ -550,7 +550,7 @@ for time_iterator = 1:totalIterations
     
     % no need to compute velocityError_MPS here, as it is already computed in the next section
     % PPC_Signals.velocityError_MPS(:, time_iterator) = ...
-    %     AgentSetup.velocity_MPS(:, time_iterator) - PPC_Signals.desiredVelocity_MPS(:, time_iterator);
+    %     AgentSetup.velocityArray_MPS(:, time_iterator) - PPC_Signals.desiredVelocity_MPS(:, time_iterator);
 
     %--- (d) Compute R matrix for the current agent positions
     %     The R matrix encodes the formation structure and is used in the PPC law.
@@ -603,11 +603,11 @@ for time_iterator = 1:totalIterations
     %--- (a) Compute the virtual control signal for PPC
     PPC_Signals.virtualControl_V(:, time_iterator) = ...
                                 -PPControl.K_V * R' * eta' * ErrorSignals.gammaV(:, time_iterator) + ...
-                                 PPC_Signals.desiredVelocity_MPS(:, time_iterator);  % [Eq. 1] Virtual control law
+                                    PPC_Signals.desiredVelocity_MPS(:, time_iterator);  % [Eq. 1] Virtual control law
 
     %--- (b) Compute the velocity error (difference between actual and virtual control)
     PPC_Signals.velocityErrorSigma_MPS(:, time_iterator) = ...
-        AgentSetup.velocity_MPS(:, time_iterator) - PPC_Signals.virtualControl_V(:, time_iterator); % [Eq. 2] Velocity error
+        AgentSetup.velocityArray_MPS(:, time_iterator) - PPC_Signals.virtualControl_V(:, time_iterator); % [Eq. 2] Velocity error
 
     %--- (c) Compute the derivative of the virtual control (finite difference)
     % This is used as a feedforward term in the PPC law.
@@ -852,6 +852,17 @@ for time_iterator = 1:totalIterations
         vehicle(j).nu1(:, time_iterator + 1)  = X(start_idx + 6:start_idx + 8, time_iterator + 1); % ν₁: Linear Velocity
         vehicle(j).nu2(:, time_iterator + 1)  = X(start_idx + 9:start_idx + 11, time_iterator + 1); % ν₂: Angular Velocity
 
+
+        %---------------------------------------------------------------------- 
+        % Add disturbance
+        % to each vehicle and each axis    
+        %---------------------------------------------------------------------- 
+        
+        vehicle(j).eta1(:, time_iterator + 1) = vehicle(j).eta1(:, time_iterator + 1) + SimulationParams.noise*rand(3,1);
+        vehicle(j).eta2(:, time_iterator + 1) = vehicle(j).eta2(:, time_iterator + 1) + SimulationParams.noise*rand(3,1);
+        vehicle(j).nu1(:, time_iterator + 1)  = vehicle(j).nu1(:, time_iterator + 1)  + SimulationParams.noise*rand(3,1);
+        vehicle(j).nu2(:, time_iterator + 1)  = vehicle(j).nu2(:, time_iterator + 1)  + SimulationParams.noise*rand(3,1);
+
         %---------------------------------------------------------------------- 
         % (c) Aggregate Position and Orientation (η) and Velocities (ν)
         %---------------------------------------------------------------------- 
@@ -862,7 +873,7 @@ for time_iterator = 1:totalIterations
         % (d) Update Initial Positions and Velocities in AgentSetup Structure
         %---------------------------------------------------------------------- 
         AgentSetup.positionsArray_M(base_idx + 1:base_idx + Framework.SPACE_DIM, time_iterator + 1) = vehicle(j).eta1(:, time_iterator + 1); % Update position
-        AgentSetup.velocity_MPS(base_idx + 1:base_idx + Framework.SPACE_DIM, time_iterator + 1) = vehicle(j).nu1(:, time_iterator + 1); % Update velocity
+        AgentSetup.velocityArray_MPS(base_idx + 1:base_idx + Framework.SPACE_DIM, time_iterator + 1) = vehicle(j).nu1(:, time_iterator + 1); % Update velocity
 
     end
     
@@ -897,15 +908,15 @@ for time_iterator = 1:totalIterations
     
 end
 
-
-
-
-
 close(hWait);  % Cierre de la barra de progreso
 
-
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% Animation and Trajectory Plotting Section
+%% Animation and Trajectory Plotting Section
+%% Animation and Trajectory Plotting Section
+%% Animation and Trajectory Plotting Section
+%% Animation and Trajectory Plotting Section
+%% Animation and Trajectory Plotting Section
+%% Animation and Trajectory Plotting Section
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % This section handles the visualization of the agents' trajectories.
 % If ANIMATION is enabled, it animates the 3D movement of the agents.
@@ -919,22 +930,11 @@ if ANIMATION == 1
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     % 3D Animation of Agent Trajectories
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-    % Calls a custom animation function to visualize the movement of all agents
-    % in 3D space over time, along with the leader's desired trajectory.
-    %
-    % Inputs:
-    %   - AgentSetup.agentTrajectoryBuffer_M: [time_steps x num_agents x 3] positions
-    %   - TrajectoryDefVelocity.VelLinearLeaderDesired: Leader's desired trajectory
-    %   - SimulationParams.TIME: Time vector
-    %   - AgentSetup.positionsArray_M: Initial positions of all agents
-    %   - EdgesFormation.E_ARRAY: Formation edges
-    %   - f: Figure handle
-    %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     f = figure(1);
-    
+
     plotAnimation3Agents_Optimized( ...
         AgentSetup.agentTrajectoryBuffer_M, ...
-        TrajectoryDefVelocity.VelLinearLeaderDesired, ...
+        TrajectoryDefVelocity.PosLeaderDesired, ...
         SimulationParams.TIME, ...
         AgentSetup.positionsArray_M, ...
         EdgesFormation.E_ARRAY, ...
@@ -944,320 +944,63 @@ else
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     % Static 3D Trajectory Plotting
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-    % Plots the desired trajectory of the leader and the actual trajectory
-    % of agent 3 in 3D space. Also overlays the final formation framework.
-    %
-    % Equation for Leader's Desired Trajectory (for plotting):
-    %   X_leader = 22.23 - (1 / 0.132) * y_linear_desired
-    %   Y_leader = 8.8   + (1 / 0.132) * x_linear_desired
-    %   Z_leader = time (for visualization)
-    %
-    % The agent's trajectory is plotted using its position history.
-    %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-    figure(1);
 
-    % plot3(19.23 - (1 / 0.163) * vds(2, :)', 12.8 + (1 / 0.163) * vds(1, :)', 2.8 * 1.0 + t(:), 'LineStyle', '-.', 'Color', 'red', 'LineWidth', 2);
-
-    % Plot the leader's desired trajectory in 3D (red dashed line)
-    plot3( ...
-        18.4 - (1 / 0.192) * TrajectoryDefVelocity.VelLinearLeaderDesired(2, :)', ...
-        11.8 + (1 / 0.192) * TrajectoryDefVelocity.VelLinearLeaderDesired(1, :)', ...
-        0.8*SimulationParams.TIME', ...
-        'LineStyle', '-.', 'Color', 'red', 'LineWidth', 2 ...
-    );
-    hold on;
-    
-    % Plot the actual trajectory of agent 3 in 3D (blue solid line)
-    plot3( ...
-        AgentSetup.positionsArray_M(3 * Framework.SPACE_DIM - 2, :), ...
-        AgentSetup.positionsArray_M(3 * Framework.SPACE_DIM - 1, :), ...
-        AgentSetup.positionsArray_M(3 * Framework.SPACE_DIM, :), ...
-        'LineStyle', '-', 'Color', 'blue', 'LineWidth', 2 ...
-    );
-    hold on;
-
-    % Overlay the final formation framework (edges between agents)
-    [grf, points] = Framework3Dplot(AgentSetup.positionsArray_M(:, end), EdgesFormation.E_ARRAY);
+    plotLeaderAndAgentTrajectory3D(TrajectoryDefVelocity, AgentSetup, Framework, EdgesFormation);
 end
 
 
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% Plotting Prescribed Performance Bounds and Edge Errors
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% This section visualizes the prescribed performance envelopes (upper and lower bounds)
-% and the actual inter-agent distance errors for each edge in the formation.
-% - For edge 1, the plot is shown in Figure 33.
-% - For edges 2 and 3, the plot is shown in Figure 34.
-% The plots help verify that the errors remain within the prescribed bounds.
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Plot the prescribed performance bounds and error signals for each edge
+plotPrescribedPerformanceBounds(ErrorSignals, EdgesFormation, Framework, SimulationParams);
 
-temp = 0; % Flag to track if any error exceeds its bounds
+% Plot the initial formation shape based on the desired agent positions
+plotInitialFormationShape(DesiredTargets.agentPositionsArray_M(:, 1), EdgesFormation.E_ARRAY);
 
-once_time = 0; % Flag to ensure plots are only created once
+% Plot the orientation tracking performance for each agent
+plotOrientationTracking(X, TrajectoryDefVelocity, Framework, SimulationParams);
 
-for i = 1:Framework.NUM_EDGES
-    % Select figure and legend label based on edge index
-    if ismember(i, [1])
-        %-------------------------------
-        % Plot for Edge 1 (Figure 33)
-        %-------------------------------
-        figure(33);
-        % Plot upper performance bound (e_plus)
-        plot(SimulationParams.TIME(1:end - 1), ErrorSignals.e_plus(i, :), ...
-            'Color', 'r', 'LineWidth', 2, 'LineStyle', '--', 'DisplayName', 'Cota de Rendimiento Superior-Inferior');
-        hold on;
-        % Plot lower performance bound (-e_minus)
-        plot(SimulationParams.TIME(1:end - 1), -ErrorSignals.e_minus(i, :), ...
-            'Color', 'r', 'LineWidth', 2, 'LineStyle', '--', 'HandleVisibility', 'off');
-        hold on;
-        % Plot actual edge error (e)
-        % Get agent indices for this edge
-        agent_i = EdgesFormation.E_ARRAY(i,2);
-        agent_j = EdgesFormation.E_ARRAY(i,1);
-        plot(SimulationParams.TIME(1:end - 1), ErrorSignals.e(i, :), ...
-            'LineWidth', 2, 'DisplayName', ['Error entre vehículos (', num2str(agent_i), '-', num2str(agent_j), ')']);
-        hold on;
-        grid on;
-        xlabel('Tiempo [Seg]', 'FontSize', 18);
-        ylabel('Error $e_{ij}$', 'Interpreter', 'latex', 'FontSize', 18);
-        % title('Prescribed Performance Bounds and Edge Error (Edge 1)', 'FontSize', 16);
-        legend('show');
-        % Check if error exceeds bounds
-        if any(ErrorSignals.e(i, :) > ErrorSignals.e_plus(i, :) | ...
-               ErrorSignals.e(i, :) < -ErrorSignals.e_minus(i, :)) && temp ~= i
-            temp = i;
-        end
-    end
+% Plot the control inputs (u) applied to each agent over time
+plotControlInputs(u, SimulationParams, Framework);
 
-    if ismember(i, [2, 3])
-        %-------------------------------
-        % Plot for Edges 2 and 3 (Figure 34)
-        %-------------------------------
-        figure(34);
-        if once_time == 0
-            % Create a new figure for edges 2 and 3
-            % Plot upper performance bound (e_plus)
-            plot(SimulationParams.TIME(1:end - 1), ErrorSignals.e_plus(i, :), ...
-                'Color', 'r', 'LineWidth', 2, 'LineStyle', '--', 'DisplayName', 'Cota de Rendimiento Superior-Inferior');
-            hold on;
-            % Plot lower performance bound (-e_minus)
-            plot(SimulationParams.TIME(1:end - 1), -ErrorSignals.e_minus(i, :), ...
-                'Color', 'r', 'LineWidth', 2, 'LineStyle', '--', 'HandleVisibility', 'off');
-            hold on;
-            once_time = 1; % Set flag to indicate figure has been created
-        end
-        % Plot actual edge error (e)
-        % Get agent indices for this edge
-        agent_i = EdgesFormation.E_ARRAY(i,2);
-        agent_j = EdgesFormation.E_ARRAY(i,1);
-        plot(SimulationParams.TIME(1:end - 1), ErrorSignals.e(i, :), ...
-            'LineWidth', 2, 'DisplayName', ['Error entre vehículos (', num2str(agent_i), '-', num2str(agent_j), ')']);
-        hold on;
-        grid on;
-        xlabel('Tiempo [Seg]', 'FontSize', 18);
-        ylabel('Error $e_{ij}$', 'Interpreter', 'latex', 'FontSize', 18);
-        % title('Prescribed Performance Bounds and Edge Errors (Edges 2 & 3)', 'FontSize', 16);
-        % Only show legend once
-        if i == 2
-            legend('show');
-        end
-        % Check if error exceeds bounds
-        if any(ErrorSignals.e(i, :) > ErrorSignals.e_plus(i, :) | ...
-               ErrorSignals.e(i, :) < -ErrorSignals.e_minus(i, :)) && temp ~= i
-            temp = i;
-        end
-    end
-end
-
-
-figure;
-view([-45, -90, 60]);
-% axis([-4 4 -4 4 -4 4]); % Uncomment if adaptive window is desired
-grid on;
-[grf, points] = Framework3Dplot(DesiredTargets.agentPositionsArray_M(:, 1), EdgesFormation.E_ARRAY);
-
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% Orientation Tracking Plots for Each Agent
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% This section visualizes the orientation (roll, pitch, yaw) of each agent
-% over time, comparing the actual orientation to the desired orientation.
-% Each agent's orientation is plotted in a separate row of subplots:
-%   - Column 1: Roll (φ)
-%   - Column 2: Pitch (θ)
-%   - Column 3: Yaw (ψ)
-% The desired orientation is overlaid for reference.
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
-figure;
-desired_trajectory = zeros(3, length(SimulationParams.TIME)-1);
-
-% Compute the desired orientation trajectory for all time steps
-for i = 1:length(SimulationParams.TIME)-1
-    desired_trajectory(:, i) = TrajectoryDefVelocity.eta2_desired(SimulationParams.TIME(i));
-end
-
-% Loop through each agent to plot orientation tracking
-for agent_idx = 1:Framework.NUM_AGENTS
-    %----------------------------------------------------------------------
-    % Extract orientation states (φ, θ, ψ) for the current agent
-    %----------------------------------------------------------------------
-    % State vector X layout for each agent:
-    %   [η₁(1:3); η₂(4:6); ν₁(7:9); ν₂(10:12)]
-    % η₂ (orientation) starts at index 4 for each agent's block
-    start_idx = (agent_idx - 1) * Framework.STATES_PER_VEHICLE + 4;
-    phi   = X(start_idx,   1:end-1); % Roll
-    theta = X(start_idx+1, 1:end-1); % Pitch
-    psi   = X(start_idx+2, 1:end-1); % Yaw
-
-    time_vec = SimulationParams.TIME(1:end-1);
-
-    %----------------------------------------------------------------------
-    % Plot Roll (φ) Tracking
-    %----------------------------------------------------------------------
-    subplot(Framework.NUM_AGENTS, 3, (agent_idx - 1) * 3 + 1);
-    plot(time_vec, phi, 'LineWidth', 2, 'DisplayName', 'Actual');
-    hold on;
-    plot(time_vec, desired_trajectory(1, :), 'LineWidth', 2, 'DisplayName', 'Desired');
-    grid on;
-    ylim([-0.5, 0.5]);
-    xlabel('Tiempo [Seg]', 'FontSize', 18);
-    ylabel(['$\phi_{', num2str(agent_idx), '}$ [rad]'], 'Interpreter', 'latex', 'FontSize', 18);
-    title(['Agent ', num2str(agent_idx), ' Roll'], 'Interpreter', 'latex', 'FontSize', 18);
-    legend('show');
-
-    %----------------------------------------------------------------------
-    % Plot Pitch (θ) Tracking
-    %----------------------------------------------------------------------
-    subplot(Framework.NUM_AGENTS, 3, (agent_idx - 1) * 3 + 2);
-    plot(time_vec, theta, 'LineWidth', 2, 'DisplayName', 'Actual');
-    hold on;
-    plot(time_vec, desired_trajectory(2, :), 'LineWidth', 2, 'DisplayName', 'Desired');
-    grid on;
-    ylim([-0.5, 0.5]);
-    xlabel('Tiempo [Seg]', 'FontSize', 18);
-    ylabel(['$\theta_{', num2str(agent_idx), '}$ [rad]'], 'Interpreter', 'latex', 'FontSize', 18);
-    title(['Agent ', num2str(agent_idx), ' Pitch'], 'Interpreter', 'latex', 'FontSize', 18);
-    legend('show');
-
-    %----------------------------------------------------------------------
-    % Plot Yaw (ψ) Tracking
-    %----------------------------------------------------------------------
-    subplot(Framework.NUM_AGENTS, 3, (agent_idx - 1) * 3 + 3);
-    plot(time_vec, psi, 'LineWidth', 2, 'DisplayName', 'Actual');
-    hold on;
-    plot(time_vec, desired_trajectory(3, :), 'LineWidth', 2, 'DisplayName', 'Desired');
-    grid on;
-    ylim([-0.5, 0.5]);
-    xlabel('Tiempo [Seg]', 'FontSize', 18);
-    ylabel(['$\psi_{', num2str(agent_idx), '}$ [rad]'], 'Interpreter', 'latex', 'FontSize', 18);
-    title(['Agent ', num2str(agent_idx), ' Yaw'], 'Interpreter', 'latex', 'FontSize', 18);
-    legend('show');
-end
-
-% Add a super title for the entire orientation tracking figure
-% sgtitle('Orientación 3 Vehiculos', 'Interpreter', 'latex', 'FontSize', 20);
-
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% Control Input Plotting for Each Agent (u_x, u_y, u_z)
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% This section visualizes the control inputs (u) applied to each agent
-% along the X, Y, and Z axes over the simulation time.
-% Each subplot corresponds to one axis, and each agent's control input is
-% plotted in the same subplot for comparison.
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
-figure;
-% Loop through each agent to plot their control inputs for each axis
-for i = 1:Framework.NUM_AGENTS
-    %-------------------------------
-    % Plot Control Input for X Axis
-    %-------------------------------
-    subplot(3,1,1);
-    plot(SimulationParams.TIME(1:end-1), u(i*Framework.SPACE_DIM-2, :), 'LineWidth', 2);
-    hold on;
-    ylim([-1000, 1000]); % Set y-axis limits for better visibility
-    title('Entrada de Control $u_x$ para Cada Agente', 'Interpreter', 'latex', 'FontSize', 14);
-    xlabel('Tiempo [s]', 'FontSize', 12);
-    ylabel('$u_x$', 'Interpreter', 'latex', 'FontSize', 12);
-    grid on;
-
-    %-------------------------------
-    % Plot Control Input for Y Axis
-    %-------------------------------
-    subplot(3,1,2);
-    plot(SimulationParams.TIME(1:end-1), u(i*Framework.SPACE_DIM-1, :), 'LineWidth', 2);
-    hold on;
-    ylim([-1000, 2000]); % Set y-axis limits for better visibility
-    title('Entrada de Control $u_y$ para Cada Agente', 'Interpreter', 'latex', 'FontSize', 14);
-    xlabel('Tiempo [s]', 'FontSize', 12);
-    ylabel('$u_y$', 'Interpreter', 'latex', 'FontSize', 12);
-    grid on;
-
-    %-------------------------------
-    % Plot Control Input for Z Axis
-    %-------------------------------
-    subplot(3,1,3);
-    plot(SimulationParams.TIME(1:end-1), u(i*Framework.SPACE_DIM, :), 'LineWidth', 2);
-    hold on;
-    ylim([-1000, 1000]); % Set y-axis limits for better visibility
-    title('Entrada de Control $u_z$ para Cada Agente', 'Interpreter', 'latex', 'FontSize', 14);
-    xlabel('Tiempo [s]', 'FontSize', 12);
-    ylabel('$u_z$', 'Interpreter', 'latex', 'FontSize', 12);
-    grid on;
-end
-
-% Add legends to each subplot for agent identification
-subplot(3,1,1);
-legend(arrayfun(@(x) sprintf('Agent %d', x), 1:Framework.NUM_AGENTS, 'UniformOutput', false), 'Location', 'best');
-subplot(3,1,2);
-legend(arrayfun(@(x) sprintf('Agent %d', x), 1:Framework.NUM_AGENTS, 'UniformOutput', false), 'Location', 'best');
-subplot(3,1,3);
-legend(arrayfun(@(x) sprintf('Agent %d', x), 1:Framework.NUM_AGENTS, 'UniformOutput', false), 'Location', 'best');
-
-% sgtitle('Control Inputs ($u_x$, $u_y$, $u_z$) for All Agents', 'Interpreter', 'latex', 'FontSize', 16);
-
+% Plot the position errors of agent 3 compared to the leader's desired trajectory
 plotPositionErrors(3, AgentSetup.positionsArray_M, TrajectoryDefVelocity.PosLeaderDesired, Framework.SPACE_DIM, SimulationParams.TIME);
 
-figure;
-% plot each axis position of the agent 3 
-plot(SimulationParams.TIME(1:end), AgentSetup.positionsArray_M(3 * Framework.SPACE_DIM - 2, :), 'LineWidth', 2, 'DisplayName', 'Posición X');
-hold on;
-plot(SimulationParams.TIME(1:end), AgentSetup.positionsArray_M(3 * Framework.SPACE_DIM - 1, :), 'LineWidth', 2, 'DisplayName', 'Posición Y');
-plot(SimulationParams.TIME(1:end), AgentSetup.positionsArray_M(3 * Framework.SPACE_DIM, :), 'LineWidth', 2, 'DisplayName', 'Posición Z');
-grid on;
+% Plot the position of each agent versus the leader's position over time
+plotAgentVsLeaderPosition( TrajectoryDefVelocity.PosLeaderDesired, AgentSetup.positionsArray_M, Framework.SPACE_DIM, SimulationParams.TIME);
 
-% Plot TrajectoryDefVelocity.PosLeaderDesired
-% figure(2);
-plot(SimulationParams.TIME, TrajectoryDefVelocity.PosLeaderDesired(1, :),'--' ,'LineWidth', 2, 'DisplayName', 'TrajectoryDefVelocity.VelLinearLeaderDesired X');
-hold on;
-plot(SimulationParams.TIME, TrajectoryDefVelocity.PosLeaderDesired(2, :),'--', 'LineWidth', 2, 'DisplayName', 'TrajectoryDefVelocity.VelLinearLeaderDesired Y');
-plot(SimulationParams.TIME, TrajectoryDefVelocity.PosLeaderDesired(3, :),'--', 'LineWidth', 2, 'DisplayName', 'TrajectoryDefVelocity.VelLinearLeaderDesired Z');
-grid on;
-xlabel('Tiempo [s]', 'FontSize', 12);
-ylabel('Integral de TrajectoryDefVelocity.VelLinearLeaderDesired', 'FontSize', 12);
-title('Integral de la Trayectoria Deseada', 'FontSize', 14);
-legend show;
 
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% Metric Calculation 
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+[avgFormErr, avgTrackErr, totCtrlEff, avgCtrlEff] = calculatePerformanceMetrics(SimulationParams.TIME(1:end-1), ...
+                                                                                ErrorSignals.e, ...
+                                                                                AgentSetup.positionsArray_M, ...
+                                                                                TrajectoryDefVelocity.PosLeaderDesired, ...
+                                                                                u(1:9,:), ...
+                                                                                SimulationParams.TIME_STEP, ...
+                                                                                Framework.SPACE_DIM, ...
+                                                                                Framework.NUM_AGENTS);                                                                                
 
-% ErrorSignals.e(1:21,end+1) = ErrorSignals.e(1:21,end);
-[avgFormErr, avgTrackErr, totCtrlEff, avgCtrlEff] = calculatePerformanceMetrics(SimulationParams.TIME(1:end-1), ErrorSignals.e, AgentSetup.velocity_MPS, TrajectoryDefVelocity.VelLinearLeaderDesired, u(1:9,:), SimulationParams.TIME_STEP, Framework.SPACE_DIM, Framework.NUM_AGENTS);
-[ITAE_formation, ITAE_tracking, ControlEnergy] = calculateAdditionalMetrics(SimulationParams.TIME(1:end-1), ErrorSignals.e, AgentSetup.velocity_MPS, TrajectoryDefVelocity.VelLinearLeaderDesired, u(1:9,:), SimulationParams.TIME_STEP, Framework.SPACE_DIM, Framework.NUM_AGENTS);
+[ITAE_formation, ITAE_tracking, ControlEnergy] = calculateAdditionalMetrics(SimulationParams.TIME(1:end-1), ...
+                                                                            ErrorSignals.e,...
+                                                                            AgentSetup.positionsArray_M, ...
+                                                                            TrajectoryDefVelocity.PosLeaderDesired, ...
+                                                                            u(1:9,:), ...
+                                                                            SimulationParams.TIME_STEP, ...
+                                                                            Framework.SPACE_DIM, ...
+                                                                            Framework.NUM_AGENTS);
 
 disp("Prescribed Performance Control Metrics:")
 disp("ITAE (Formation): " + ITAE_formation)
 disp("ITAE (Tracking):  " + ITAE_tracking)
 disp("Total Control Energy: " + ControlEnergy)
 
-% Adjust layout for better visualization
-sgtitle('Velocity Errors (position Error [M]) for 9 Agents', 'FontSize', 14);
 
-% reduce in the x and y axis
-% AgentPositions(7, 1:end) = AgentPositions(7, 1:end) - 8 ; 
-% AgentPositions(8, 1:end) = AgentPositions(8, 1:end) - 8 ; 
-% plotPositionComparison(3, AgentSetup.positionsArray_M, TrajectoryDefVelocity.PosLeaderDesired, Framework.SPACE_DIM, SimulationParams.TIME);
+if mod(time_iterator, 200)==0
+    fprintf('t=%.2f | ||vDot||=%.2f  ||rigidez||=%.2f  ||OMEGA||=%.2f  ||sigma||=%.2f  ||u1||=%.2f\n', ...
+        SimulationParams.TIME(time_iterator), ...
+        norm(PPC_Signals.virtualControlDot_V(:, time_iterator)), ...
+        norm(R' * eta' * ErrorSignals.gammaV(:, time_iterator)), ...
+        norm(OMEGA), ...
+        norm(PPC_Signals.velocityErrorSigma_MPS(:, time_iterator)), ...
+        norm(PPC_Signals.controlInput_V(:, time_iterator)));
+end
 
 
 toc
