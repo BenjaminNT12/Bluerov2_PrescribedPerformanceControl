@@ -62,7 +62,7 @@ function plotAnimation3Agents_Optimized(P, v0, t, p, E, f)
             
         % Actualizar los textos del framework
         for k = 1:length(framework_handles.text)
-            set(framework_handles.text(k), 'Position', new_coords.text(k, :));
+            set(framework_handles.text(k), 'Position', new_coords.text(k, :) + [0, 0, 1]); % Offset para el texto
         end
         
         % Dibujar todos los cambios en la pantalla

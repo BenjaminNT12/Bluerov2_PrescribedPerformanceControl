@@ -1,33 +1,35 @@
 function plotAgentVsLeaderPosition( leaderPos, agentPosArray, spaceDim, timeVec)
     figure;
     subplot(3,1,1);
-    plot(timeVec, leaderPos(1, :),'--' ,'LineWidth', 2, 'DisplayName', 'Desired X');
+    plot(timeVec, leaderPos(1, :),'--' ,'LineWidth', 2, 'DisplayName', 'Deseada');
     hold on;
-    plot(timeVec, agentPosArray(3 * spaceDim - 2, :), 'LineWidth', 2, 'DisplayName', 'Agent 3 X');
+    plot(timeVec, agentPosArray(3 * spaceDim - 2, :), 'LineWidth', 2, 'DisplayName', 'Actual');
     grid on;
     xlabel('Tiempo [s]', 'FontSize', 12);
-    ylabel('X [m]', 'FontSize', 12);
-    title('Posición X', 'FontSize', 14);
+    ylabel('Posición X [m]', 'FontSize', 12);
+    % title('Posición X', 'FontSize', 14);
+    title(sprintf('Comparación de Posición en el Eje X (Agente 3)'), 'FontSize', 14);
     legend show;
 
     subplot(3,1,2);
-    plot(timeVec, leaderPos(2, :),'--', 'LineWidth', 2, 'DisplayName', 'Desired Y');
+    plot(timeVec, leaderPos(2, :),'--', 'LineWidth', 2, 'DisplayName', 'Deseada');
     hold on;
-    plot(timeVec, agentPosArray(3 * spaceDim - 1, :), 'LineWidth', 2, 'DisplayName', 'Agent 3 Y');
+    plot(timeVec, agentPosArray(3 * spaceDim - 1, :), 'LineWidth', 2, 'DisplayName', 'Actual');
     grid on;
     xlabel('Tiempo [s]', 'FontSize', 12);
-    ylabel('Y [m]', 'FontSize', 12);
-    title('Posición Y', 'FontSize', 14);
+    ylabel('Posición Y [m]', 'FontSize', 12);
+    % title('Posición Y', 'FontSize', 14);
+    title(sprintf('Comparación de Posición en el Eje X (Agente 3)'), 'FontSize', 14);
     legend show;
 
     subplot(3,1,3);
-    plot(timeVec, leaderPos(3, :),'--', 'LineWidth', 2, 'DisplayName', 'Desired Z');
+    plot(timeVec, leaderPos(3, :),'--', 'LineWidth', 2, 'DisplayName', 'Deseada');
     hold on;
-    plot(timeVec, agentPosArray(3 * spaceDim, :), 'LineWidth', 2, 'DisplayName', 'Agent 3 Z');
+    plot(timeVec, agentPosArray(3 * spaceDim, :), 'LineWidth', 2, 'DisplayName', 'Actual');
     grid on;
     xlabel('Tiempo [s]', 'FontSize', 12);
-    ylabel('Z [m]', 'FontSize', 12);
-    title('Posición Z', 'FontSize', 14);
+    ylabel('Posición Z [m]', 'FontSize', 12);
+    title(sprintf('Comparación de Posición en el Eje X (Agente 3)'), 'FontSize', 14);
     legend show;
 
 

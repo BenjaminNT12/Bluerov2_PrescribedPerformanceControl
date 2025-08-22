@@ -11,18 +11,18 @@ function plotPrescribedPerformanceBounds(ErrorSignals, EdgesFormation, Framework
             figure(33);
             % Plot upper performance bound (e_plus)
             plot(SimulationParams.TIME(1:end - 1), ErrorSignals.e_plus(i, :), ...
-                'Color', 'r', 'LineStyle', '--', 'DisplayName', 'Cota de Rendimiento Superior-Inferior');
+                'Color', 'r', 'LineStyle', '--', 'DisplayName', 'Cota de Rendimiento Superior-Inferior', 'LineWidth', 1.5);
             hold on;
             % Plot lower performance bound (-e_minus)
             plot(SimulationParams.TIME(1:end - 1), -ErrorSignals.e_minus(i, :), ...
-                'Color', 'r', 'LineStyle', '--', 'HandleVisibility', 'off');
+                'Color', 'r', 'LineStyle', '--', 'HandleVisibility', 'off', 'LineWidth', 1.5);
             hold on;
             % Plot actual edge error (e)
             % Get agent indices for this edge
             agent_i = EdgesFormation.E_ARRAY(i,2);
             agent_j = EdgesFormation.E_ARRAY(i,1);
             plot(SimulationParams.TIME(1:end - 1), ErrorSignals.e(i, :), ...
-                'DisplayName', ['Error entre vehículos (', num2str(agent_i), '-', num2str(agent_j), ')']);
+                'DisplayName', ['Error entre vehículos (', num2str(agent_i), '-', num2str(agent_j), ')'], 'LineWidth', 1.5);
             hold on;
             grid on;
             xlabel('Tiempo [Seg]', 'FontSize', 18);
@@ -44,11 +44,11 @@ function plotPrescribedPerformanceBounds(ErrorSignals, EdgesFormation, Framework
                 % Create a new figure for edges 2 and 3
                 % Plot upper performance bound (e_plus)
                 plot(SimulationParams.TIME(1:end - 1), ErrorSignals.e_plus(i, :), ...
-                    'Color', 'r', 'LineStyle', '--', 'DisplayName', 'Cota de Rendimiento Superior-Inferior');
+                    'Color', 'r', 'LineStyle', '--', 'DisplayName', 'Cota de Rendimiento Superior-Inferior','LineWidth', 1.5);
                 hold on;
                 % Plot lower performance bound (-e_minus)
                 plot(SimulationParams.TIME(1:end - 1), -ErrorSignals.e_minus(i, :), ...
-                    'Color', 'r', 'LineStyle', '--', 'HandleVisibility', 'off');
+                    'Color', 'r', 'LineStyle', '--', 'HandleVisibility', 'off', 'LineWidth', 1.5);
                 hold on;
                 once_time = 1; % Set flag to indicate figure has been created
             end
@@ -57,7 +57,7 @@ function plotPrescribedPerformanceBounds(ErrorSignals, EdgesFormation, Framework
             agent_i = EdgesFormation.E_ARRAY(i,2);
             agent_j = EdgesFormation.E_ARRAY(i,1);
             plot(SimulationParams.TIME(1:end - 1), ErrorSignals.e(i, :), ...
-                'DisplayName', ['Error entre vehículos (', num2str(agent_i), '-', num2str(agent_j), ')']);
+                'DisplayName', ['Error entre vehículos (', num2str(agent_i), '-', num2str(agent_j), ')'], 'LineWidth', 1.5);
             hold on;
             grid on;
             xlabel('Tiempo [Seg]', 'FontSize', 18);
